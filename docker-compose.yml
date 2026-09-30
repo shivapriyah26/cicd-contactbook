@@ -1,0 +1,64 @@
+# Passwords and the image tag come from environment variables.
+#  - In Jenkins: injected from Jenkins Credentials (never stored in Git)
+#  - On your laptop: copy .env.example to .env
+services:
+  db:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql        # PERSISTENT STORAGE: data survives redeploys
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks: [app-net]
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime
+    image: contactbook-backend:${IMAGE_TAG:?IMAGE_TAG is required}
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}
+      APP_VERSION: ${IMAGE_TAG}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [app-net]
+
+  frontend:
+    build:
+      context: ./frontend
+    image: contactbook-frontend:${IMAGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "8081:80"                        # 8080 is used by Jenkins
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [app-net]
+
+volumes:
+  mysql_data:
+
+networks:
+  app-net:

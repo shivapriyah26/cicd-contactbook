@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Contact Book</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    input { margin: .25rem; padding: .4rem; }
+    li { margin: .4rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Contact Book</h1>
+  <p>Backend status: <strong id="api-status">checking...</strong></p>
+  <form id="contact-form">
+    <input id="c-name" placeholder="Name" required>
+    <input id="c-email" type="email" placeholder="Email" required>
+    <input id="c-phone" placeholder="Phone">
+    <button type="submit">Add</button>
+  </form>
+  <ul id="contact-list"></ul>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const API = "/api"; // nginx forwards /api/* to the backend container
+
+    async function load() {
+      try {
+        const h = await (await fetch(API + "/health")).json();
+        $("api-status").textContent = "OK - version " + h.version;
+      } catch (e) {
+        $("api-status").textContent = "unavailable";
+      }
+      const contacts = await (await fetch(API + "/contacts")).json();
+      $("contact-list").replaceChildren(...contacts.map((c) => {
+        const li = document.createElement("li");
+        li.textContent = c.name + " - " + c.email + " " + (c.phone || "") + " ";
+        const del = document.createElement("button");
+        del.textContent = "Delete";
+        del.onclick = async () => { await fetch(API + "/contacts/" + c.id, { method: "DELETE" }); load(); };
+        li.append(del);
+        return li;
+      }));
+    }
+
+    $("contact-form").onsubmit = async (e) => {
+      e.preventDefault();
+      await fetch(API + "/contacts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: $("c-name").value, email: $("c-email").value, phone: $("c-phone").value || null }),
+      });
+      e.target.reset();
+      load();
+    };
+    load();
+  </script>
+</body>
+</html>
